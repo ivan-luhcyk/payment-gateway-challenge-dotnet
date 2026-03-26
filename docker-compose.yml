@@ -1,6 +1,29 @@
 version: "3.8"
 
 services:
+  redis:
+    container_name: redis
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   bank_simulator:
     container_name: bank_simulator
     image: bbyars/mountebank:2.8.1
@@ -12,4 +35,26 @@ services:
       - type: bind
         source: ./imposters
         target: /imposters
-      
+  api:
+    container_name: payment_gateway_api
+    build:
+      context: .
+      dockerfile: src/PaymentGateway.Api/Dockerfile
+    ports:
+      - "5067:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - BankSimulator__BaseUrl=http://bank_simulator:8080
+      - Redis__ConnectionString=redis:6379
+      - MassTransit__RabbitMq__Host=rabbitmq
+      - MassTransit__RabbitMq__VirtualHost=/
+      - MassTransit__RabbitMq__Username=guest
+      - MassTransit__RabbitMq__Password=guest
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      bank_simulator:
+        condition: service_started
+
